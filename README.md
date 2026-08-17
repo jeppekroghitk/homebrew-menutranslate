@@ -16,13 +16,18 @@ Once the repository is on GitHub and a release exists (see
 [Cutting a release](#cutting-a-release)):
 
 ```sh
-brew tap OWNER/menutranslate https://github.com/OWNER/REPO
+brew tap jeppekroghitk/menutranslate
 brew install --cask menutranslate
 open /Applications/MenuTranslate.app
 ```
 
+No URL is needed because the repository is named `homebrew-menutranslate`:
+Homebrew expands `jeppekroghitk/menutranslate` to
+`github.com/jeppekroghitk/homebrew-menutranslate` on its own. Renaming the repo
+would mean passing the URL to `brew tap` explicitly from then on.
+
 Homebrew 6 refuses to load casks from untrusted third-party taps. If it asks,
-trust yours once with `brew trust --tap OWNER/menutranslate`.
+trust yours once with `brew trust --tap jeppekroghitk/menutranslate`.
 
 ### Why the cask strips the quarantine flag
 
@@ -149,8 +154,8 @@ secrets into it.
    `Casks/menutranslate.rb`. The digest can only be computed from the artefact
    CI itself built, which is why the cask is updated there rather than by hand.
 
-The workflow fails if the tag and `VERSION` disagree. The `OWNER/REPO`
-placeholders in the cask and in this README are rewritten on the first release.
+The workflow fails if the tag and `VERSION` disagree, so that a release can
+never advertise a version the app does not report.
 
 ### Signing properly
 

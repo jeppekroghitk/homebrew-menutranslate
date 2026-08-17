@@ -2,10 +2,10 @@ cask "menutranslate" do
   version "0.1.0"
   sha256 :no_check
 
-  url "https://github.com/OWNER/REPO/releases/download/v#{version}/MenuTranslate-#{version}.zip"
+  url "https://github.com/jeppekroghitk/homebrew-menutranslate/releases/download/v#{version}/MenuTranslate-#{version}.zip"
   name "MenuTranslate"
   desc "Menu bar popover for quick Google Translate lookups"
-  homepage "https://github.com/OWNER/REPO"
+  homepage "https://github.com/jeppekroghitk/homebrew-menutranslate"
 
   depends_on macos: :ventura
 

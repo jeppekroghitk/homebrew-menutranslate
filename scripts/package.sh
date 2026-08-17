@@ -73,7 +73,7 @@ cask "menutranslate-local" do
   url "file://$ZIP"
   name "MenuTranslate"
   desc "Menu bar popover for quick Google Translate lookups (local build)"
-  homepage "https://github.com/OWNER/REPO"
+  homepage "https://github.com/jeppekroghitk/homebrew-menutranslate"
 
   depends_on macos: :ventura
 

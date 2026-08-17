@@ -48,7 +48,7 @@ jobs:
             Install with Homebrew:
 
             ```sh
-            brew tap ${{ github.repository_owner }}/menutranslate https://github.com/${{ github.repository }}
+            brew tap ${{ github.repository_owner }}/menutranslate
             brew install --cask menutranslate
             ```
 
@@ -61,7 +61,6 @@ jobs:
           git checkout -B "$branch" "origin/$branch"
 
           sed -i '' \
-            -e 's|OWNER/REPO|${{ github.repository }}|g' \
             -e 's|^  version .*|  version "${{ steps.meta.outputs.version }}"|' \
             -e 's|^  sha256 .*|  sha256 "${{ steps.meta.outputs.sha256 }}"|' \
             Casks/menutranslate.rb
