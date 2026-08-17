@@ -61,7 +61,9 @@ brew-install: app tap ## Install the local build through Homebrew, as a real use
 
 .PHONY: brew-uninstall
 brew-uninstall: ## Remove a Homebrew-installed local build
-	$(BREW) uninstall --cask --force --zap $(TAP)/menutranslate-local
+	@# No --zap: that would delete the preferences plist and forget the saved
+	@# languages on every dev reinstall.
+	$(BREW) uninstall --cask --force $(TAP)/menutranslate-local
 
 .PHONY: uninstall
 uninstall: ## Remove the app and its preferences
