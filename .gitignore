@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+build/
+Casks/menutranslate-local.rb
+.DS_Store

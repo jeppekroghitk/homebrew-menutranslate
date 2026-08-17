@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag matches VERSION
+        if: github.ref_type == 'tag'
+        run: |
+          expected="v$(tr -d '[:space:]' < VERSION)"
+          if [ "$expected" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match VERSION ($expected)"
+            exit 1
+          fi
+
+      - name: Build the app bundle
+        run: ./scripts/package.sh
+
+      - name: Collect release metadata
+        id: meta
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          zip="build/MenuTranslate-$version.zip"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 "$zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          files: ${{ steps.meta.outputs.zip }}
+          generate_release_notes: true
+          body: |
+            Install with Homebrew:
+
+            ```sh
+            brew tap ${{ github.repository_owner }}/menutranslate https://github.com/${{ github.repository }}
+            brew install --cask menutranslate
+            ```
+
+      # The cask has to point at the artefact CI just built, so its digest can
+      # only be filled in here.
+      - name: Point the cask at this release
+        run: |
+          branch="${{ github.event.repository.default_branch }}"
+          git fetch origin "$branch"
+          git checkout -B "$branch" "origin/$branch"
+
+          sed -i '' \
+            -e 's|OWNER/REPO|${{ github.repository }}|g' \
+            -e 's|^  version .*|  version "${{ steps.meta.outputs.version }}"|' \
+            -e 's|^  sha256 .*|  sha256 "${{ steps.meta.outputs.sha256 }}"|' \
+            Casks/menutranslate.rb
+
+          if git diff --quiet Casks/menutranslate.rb; then
+            echo "Cask already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Point cask at ${{ steps.meta.outputs.version }}" Casks/menutranslate.rb
+          git push origin "$branch"
