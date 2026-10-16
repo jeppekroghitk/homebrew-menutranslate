@@ -1,6 +1,6 @@
 cask "menutranslate" do
-  version "0.1.0"
-  sha256 "81c6c1bc2f4650988f37a0ad4153c32682cc2067b7403bec6c2ddefe06afaf52"
+  version "0.2.0"
+  sha256 "a5592114f5d2bcc4e05945b23c555b1b934882d14fb810bcaca1b034ad5ae491"
 
   url "https://github.com/jeppekroghitk/homebrew-menutranslate/releases/download/v#{version}/MenuTranslate-#{version}.zip"
   name "MenuTranslate"
