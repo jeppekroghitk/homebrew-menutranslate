@@ -1,9 +1,11 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = TranslatorModel()
+    private var hotKeys: HotKeyController!
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var keyMonitor: Any?
@@ -13,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // equivalents through the main menu — and that is the only thing that
         // gives the text editor ⌘A, ⌘C, ⌘V, ⌘X and ⌘Z.
         NSApp.mainMenu = Self.makeMainMenu()
+
+        hotKeys = HotKeyController { [weak self] in self?.togglePanel() }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
@@ -33,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.delegate = self
         popover.contentSize = NSSize(width: 400, height: 246)
         popover.contentViewController = NSHostingController(
-            rootView: TranslatePanel(model: model, onQuit: { NSApp.terminate(nil) })
+            rootView: TranslatePanel(model: model, hotKeys: hotKeys, onQuit: { NSApp.terminate(nil) })
         )
 
         NotificationCenter.default.addObserver(
@@ -53,7 +57,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             showContextMenu()
-        } else if popover.isShown {
+        } else {
+            togglePanel()
+        }
+    }
+
+    private func togglePanel() {
+        if popover.isShown {
             closePanel()
         } else {
             openPanel()
@@ -73,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // close() rather than performClose(): dismissal is ours to decide here,
         // not something to route back through the popover's behaviour.
         popover.close()
+        hotKeys.cancelRecording()
         removeKeyMonitor()
     }
 
@@ -81,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        hotKeys.cancelRecording()
         removeKeyMonitor()
     }
 
@@ -109,22 +121,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     // MARK: - Panel-wide keys
 
-    /// Escape and ⌘↩ have no menu item to hang off. Everything else — including
-    /// ⌘A and the clipboard keys — is passed through to the main menu.
+    /// Escape, ⌘↩ and ⌘L have no menu item to hang off. Everything else —
+    /// including ⌘A and the clipboard keys — is passed through to the main menu.
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
 
-            if event.keyCode == 53 {
-                self.closePanel()
+            if self.hotKeys.isRecording {
+                self.hotKeys.record(event)
                 return nil
             }
-            if event.keyCode == 36, event.modifierFlags.contains(.command) {
+
+            // The language pickers are popovers in windows of their own; leave
+            // their keys alone so esc closes just the picker.
+            guard event.window === self.popover.contentViewController?.view.window else { return event }
+
+            let command = event.modifierFlags.contains(.command)
+            switch Int(event.keyCode) {
+            case kVK_Escape:
+                if self.model.isPicking, !self.model.pickQuery.isEmpty {
+                    self.model.pickQuery = ""
+                } else {
+                    self.closePanel()
+                }
+                return nil
+            case kVK_Return where command:
                 self.model.translateNow()
                 return nil
+            case kVK_ANSI_L where command:
+                self.model.beginPicking()
+                return nil
+            default:
+                return event
             }
-            return event
         }
     }
 

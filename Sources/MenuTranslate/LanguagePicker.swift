@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LanguagePicker: View {
     @Binding var selection: Language
-    let includeAuto: Bool
+    var extras: [Language] = []
     let recents: [Language]
 
     @State private var isPresented = false
@@ -37,7 +37,7 @@ struct LanguagePicker: View {
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             LanguageList(
                 selection: $selection,
-                includeAuto: includeAuto,
+                extras: extras,
                 recents: recents,
                 dismiss: { isPresented = false }
             )
@@ -47,7 +47,7 @@ struct LanguagePicker: View {
 
 private struct LanguageList: View {
     @Binding var selection: Language
-    let includeAuto: Bool
+    let extras: [Language]
     let recents: [Language]
     let dismiss: () -> Void
 
@@ -89,26 +89,15 @@ private struct LanguageList: View {
     }
 
     private var pool: [Language] {
-        includeAuto ? [.auto] + Language.all : Language.all
+        extras + Language.all
     }
 
     private var matches: [Language] {
-        let needle = query.trimmingCharacters(in: .whitespaces)
-        guard !needle.isEmpty else { return pool }
-        // Prefix matches first: typing "da" should surface Danish, not Bambara.
-        let hits = pool.filter { $0.name.range(of: needle, options: .caseInsensitive) != nil || $0.code.caseInsensitiveCompare(needle) == .orderedSame }
-        return hits.sorted { lhs, rhs in
-            let lhsPrefix = lhs.name.lowercased().hasPrefix(needle.lowercased())
-            let rhsPrefix = rhs.name.lowercased().hasPrefix(needle.lowercased())
-            if lhsPrefix != rhsPrefix { return lhsPrefix }
-            return lhs.name < rhs.name
-        }
+        Language.search(query, in: pool)
     }
 
     private var shortcuts: [Language] {
-        var list = includeAuto ? [Language.auto] : []
-        list += recents.filter { !list.contains($0) }
-        return list
+        extras + recents.filter { !extras.contains($0) }
     }
 
     @ViewBuilder

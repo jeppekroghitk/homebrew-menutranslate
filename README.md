@@ -3,10 +3,13 @@
 A menu bar popover for quick Google Translate lookups. Click the icon, type, read
 the translation — no button to press, no browser tab, no Dock icon.
 
+- Opens from anywhere with a global hotkey, `⌥⌘T` by default.
+- Asks for the target language first: type a few letters or press `1`–`5` for a
+  recent one, `↩` to keep the current one.
+- Always detects the source. Text already in the target language goes to a
+  fallback instead, so a Danish → English pair translates both ways untouched.
 - Translates as you type, ~450 ms after you stop.
-- Remembers both languages and the last text across restarts.
-- One button swaps the languages and moves the translation into the input box.
-- 130 languages, searchable, with your recent ones pinned to the top.
+- Remembers the languages and the last text across restarts.
 
 ## Install
 
@@ -18,16 +21,20 @@ open /Applications/MenuTranslate.app
 
 Homebrew asks you to trust a third-party tap once — `brew trust
 jeppekroghitk/menutranslate`. The app is signed ad-hoc rather than with a paid
-Developer ID, so the cask clears Gatekeeper's quarantine flag in a `postflight`
-block; the comment in `Casks/menutranslate.rb` explains why.
+Developer ID, so the cask clears Gatekeeper's quarantine flag in a
+`postflight_steps` block; the comment in `Casks/menutranslate.rb` explains why.
 
 ## Usage
 
-Click the icon and start typing. Right-click it for "Launch at login" and "Quit".
+Press `⌥⌘T` or click the icon, pick a language, and start typing. The `⋯` menu
+changes the hotkey and turns off "Choose language on open". Right-click the icon
+for "Launch at login" and "Quit".
 
 | Shortcut | Action |
 | --- | --- |
-| `⇧⌘S` | Swap languages |
+| `⌥⌘T` | Open or close the panel, from any app |
+| `1`–`5` | Choose a language while picking |
+| `⌘L` | Choose the target language again |
 | `⇧⌘C` | Copy translation |
 | `⌘K` | Clear |
 | `⌘↩` | Translate now, skipping the debounce |

@@ -15,9 +15,8 @@ cask "menutranslate" do
   # refuses to launch it while Homebrew's quarantine flag is attached. Homebrew 6
   # dropped --no-quarantine, so the attribute is cleared here instead. Remove
   # this block if you ever sign and notarise with a Developer ID.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/MenuTranslate.app"]
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/MenuTranslate.app"]
   end
 
   uninstall quit: "dk.aarhus.MenuTranslate"

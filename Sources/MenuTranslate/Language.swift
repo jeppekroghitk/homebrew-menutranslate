@@ -6,21 +6,42 @@ struct Language: Identifiable, Hashable {
 
     var id: String { code }
     var isAuto: Bool { code == Language.autoCode }
+    var isLanguage: Bool { !isAuto && self != .noFallback }
 }
 
 extension Language {
     static let autoCode = "auto"
     static let auto = Language(code: autoCode, name: "Detect language")
 
+    static let noFallback = Language(code: "none", name: "None")
+
+    /// Google reports a few languages under legacy codes that differ from the
+    /// ones it accepts as a target.
+    private static let aliases = ["iw": "he", "jw": "jv", "zh": "zh-CN"]
+
     static func named(_ code: String) -> Language? {
         if code == autoCode { return auto }
-        return byCode[code]
+        if code == noFallback.code { return noFallback }
+        return byCode[aliases[code] ?? code]
+    }
+
+    /// Prefix matches first: typing "da" should surface Danish, not Bambara.
+    static func search(_ query: String, in pool: [Language]) -> [Language] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return pool }
+        let hits = pool.filter { $0.name.range(of: needle, options: .caseInsensitive) != nil || $0.code.caseInsensitiveCompare(needle) == .orderedSame }
+        return hits.sorted { lhs, rhs in
+            let lhsPrefix = lhs.name.lowercased().hasPrefix(needle.lowercased())
+            let rhsPrefix = rhs.name.lowercased().hasPrefix(needle.lowercased())
+            if lhsPrefix != rhsPrefix { return lhsPrefix }
+            return lhs.name < rhs.name
+        }
     }
 
     /// Falls back to English so a stale or hand-edited preference can never
     /// leave a picker without a selection.
     static func resolve(_ code: String?, allowAuto: Bool) -> Language {
-        if let code, let language = named(code), allowAuto || !language.isAuto {
+        if let code, let language = named(code), language.isLanguage || (allowAuto && language.isAuto) {
             return language
         }
         return allowAuto ? auto : byCode["en"]!

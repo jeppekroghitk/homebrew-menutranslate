@@ -12,20 +12,15 @@ final class TranslatorModel: ObservableObject {
         case failed(String)
     }
 
+    static let quickPickCount = 5
+
     @Published private(set) var input: String
     @Published private(set) var output = ""
     @Published private(set) var status: Status = .idle
     @Published private(set) var detected: Language?
-
-    @Published var source: Language {
-        didSet {
-            guard source != oldValue else { return }
-            defaults.set(source.code, forKey: Keys.source)
-            noteRecent(source)
-            detected = nil
-            retranslate()
-        }
-    }
+    /// The language `output` is in: the target, or the fallback when the text
+    /// was already in the target language.
+    @Published private(set) var outputLanguage: Language?
 
     @Published var target: Language {
         didSet {
@@ -33,6 +28,34 @@ final class TranslatorModel: ObservableObject {
             defaults.set(target.code, forKey: Keys.target)
             noteRecent(target)
             retranslate()
+        }
+    }
+
+    @Published var fallback: Language {
+        didSet {
+            guard fallback != oldValue else { return }
+            defaults.set(fallback.code, forKey: Keys.fallback)
+            noteRecent(fallback)
+            retranslate()
+        }
+    }
+
+    @Published var quickPickOnOpen: Bool {
+        didSet { defaults.set(quickPickOnOpen, forKey: Keys.quickPickOnOpen) }
+    }
+
+    @Published private(set) var isPicking = false
+
+    @Published var pickQuery = "" {
+        didSet {
+            // Language names contain no digits, so a digit always means "the
+            // n-th option on screen", whether or not a filter is typed.
+            guard let number = pickQuery.compactMap(\.wholeNumberValue).first else { return }
+            pickQuery = pickQuery.filter { !$0.isNumber }
+            let options = quickPickOptions
+            if number >= 1, number <= options.count {
+                pick(options[number - 1])
+            }
         }
     }
 
@@ -44,21 +67,25 @@ final class TranslatorModel: ObservableObject {
     private let defaults: UserDefaults
     private var debounce: Task<Void, Never>?
     private var inFlight: Task<Void, Never>?
-    private var cache: [String: Translation] = [:]
+    private var cache: [String: TranslationResult] = [:]
 
     private enum Keys {
-        static let source = "sourceLanguage"
         static let target = "targetLanguage"
+        static let fallback = "fallbackLanguage"
         static let input = "lastInput"
         static let recents = "recentLanguages"
+        static let quickPickOnOpen = "pickLanguageOnOpen"
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         input = defaults.string(forKey: Keys.input) ?? ""
-        source = Language.resolve(defaults.string(forKey: Keys.source) ?? Language.autoCode, allowAuto: true)
-        target = Language.resolve(defaults.string(forKey: Keys.target) ?? Locale.current.language.languageCode?.identifier, allowAuto: false)
-        recents = (defaults.stringArray(forKey: Keys.recents) ?? []).compactMap(Language.named)
+        let target = Language.resolve(defaults.string(forKey: Keys.target) ?? Locale.current.language.languageCode?.identifier, allowAuto: false)
+        self.target = target
+        fallback = defaults.string(forKey: Keys.fallback).flatMap(Language.named).flatMap { $0.isAuto ? nil : $0 }
+            ?? (target.code == "en" ? .noFallback : Language.resolve("en", allowAuto: false))
+        quickPickOnOpen = defaults.object(forKey: Keys.quickPickOnOpen) as? Bool ?? true
+        recents = (defaults.stringArray(forKey: Keys.recents) ?? []).compactMap(Language.named).filter(\.isLanguage)
     }
 
     var isBusy: Bool { status == .translating }
@@ -67,14 +94,14 @@ final class TranslatorModel: ObservableObject {
 
     var isOverLimit: Bool { characterCount > TranslationService.characterLimit }
 
-    var canSwap: Bool { !source.isAuto || detected != nil }
-
     var webURL: URL {
-        TranslationService.webURL(text: input, from: source.code, to: target.code)
+        TranslationService.webURL(text: input, from: Language.autoCode, to: (outputLanguage ?? target).code)
     }
 
     func panelDidOpen() {
         focusRequest += 1
+        pickQuery = ""
+        isPicking = quickPickOnOpen
         // Cheap catch-up: languages may have changed while the panel was closed,
         // or a previous attempt may have failed offline.
         if output.isEmpty, !trimmedInput.isEmpty {
@@ -105,32 +132,58 @@ final class TranslatorModel: ObservableObject {
         input = ""
         output = ""
         detected = nil
+        outputLanguage = nil
         status = .idle
         defaults.removeObject(forKey: Keys.input)
-    }
-
-    /// Mirrors the website: with "Detect language" selected, swapping adopts the
-    /// language Google actually detected rather than leaving auto on both sides.
-    func swap() {
-        let resolvedSource = source.isAuto ? detected : source
-        guard let resolvedSource else { return }
-
-        let translated = output
-        source = target
-        target = resolvedSource
-        detected = nil
-
-        if !translated.isEmpty {
-            input = translated
-            defaults.set(input, forKey: Keys.input)
-        }
-        translateNow()
     }
 
     func copyOutput() {
         guard !output.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(output, forType: .string)
+    }
+
+    // MARK: - Quick pick
+
+    /// Without a filter: recent languages other than the current target, so 1
+    /// always flips back to the last one used. With a filter: the best matches.
+    var quickPickOptions: [Language] {
+        let needle = pickQuery.trimmingCharacters(in: .whitespaces)
+        let pool = needle.isEmpty ? suggestions : Language.search(needle, in: Language.all)
+        return Array(pool.prefix(Self.quickPickCount))
+    }
+
+    func beginPicking() {
+        pickQuery = ""
+        isPicking = true
+    }
+
+    func endPicking() {
+        isPicking = false
+        pickQuery = ""
+    }
+
+    func pick(_ language: Language) {
+        target = language
+        endPicking()
+    }
+
+    /// ↩ keeps the current target unless a filter is typed.
+    func submitPick() {
+        if pickQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+            endPicking()
+        } else if let first = quickPickOptions.first {
+            pick(first)
+        }
+    }
+
+    private var suggestions: [Language] {
+        let backups = [fallback, Language.named("en"), Locale.current.language.languageCode.flatMap { Language.named($0.identifier) }]
+        var list: [Language] = []
+        for language in recents + backups.compactMap({ $0 }) where language.isLanguage && language != target && !list.contains(language) {
+            list.append(language)
+        }
+        return list
     }
 
     // MARK: - Translating
@@ -152,6 +205,7 @@ final class TranslatorModel: ObservableObject {
             inFlight?.cancel()
             output = ""
             detected = nil
+            outputLanguage = nil
             status = .idle
             return
         }
@@ -162,7 +216,7 @@ final class TranslatorModel: ObservableObject {
             return
         }
 
-        if let cached = cache[cacheKey(text)] {
+        if let cached = cache[Self.cacheKey(text, target, fallback)] {
             inFlight?.cancel()
             apply(cached)
             return
@@ -181,17 +235,17 @@ final class TranslatorModel: ObservableObject {
         inFlight?.cancel()
         status = .translating
 
-        let source = source.code
-        let target = target.code
+        let target = target
+        let fallback = fallback
         inFlight = Task { [weak self] in
             do {
-                let translation = try await TranslationService.translate(text, from: source, to: target)
+                let result = try await Self.translate(text, to: target, fallback: fallback)
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
                 // A newer request may have superseded this one mid-flight.
-                guard source == self.source.code, target == self.target.code, text == self.trimmedInput else { return }
-                self.remember(translation, for: text, source: source, target: target)
-                self.apply(translation)
+                guard target == self.target, fallback == self.fallback, text == self.trimmedInput else { return }
+                self.remember(result, for: Self.cacheKey(text, target, fallback))
+                self.apply(result)
             } catch is CancellationError {
                 return
             } catch {
@@ -201,26 +255,47 @@ final class TranslatorModel: ObservableObject {
         }
     }
 
-    private func apply(_ translation: Translation) {
-        output = translation.text
-        detected = translation.detectedSourceCode.flatMap(Language.named)
+    /// Detection alone would hand Danish text back unchanged with a Danish
+    /// target. The fallback turns the pair into "whichever one it isn't in",
+    /// at the cost of a second request in that case.
+    private static func translate(_ text: String, to target: Language, fallback: Language) async throws -> TranslationResult {
+        let first = try await TranslationService.translate(text, from: Language.autoCode, to: target.code)
+        let detected = first.detectedSourceCode.flatMap(Language.named)
+        guard detected == target, fallback.isLanguage, fallback != target else {
+            return TranslationResult(text: first.text, detected: detected, language: target)
+        }
+        let second = try await TranslationService.translate(text, from: target.code, to: fallback.code)
+        return TranslationResult(text: second.text, detected: detected, language: fallback)
+    }
+
+    private func apply(_ result: TranslationResult) {
+        output = result.text
+        detected = result.detected
+        outputLanguage = result.language
         status = .done
     }
 
-    private func cacheKey(_ text: String) -> String {
-        "\(source.code)|\(target.code)|\(text)"
+    private static func cacheKey(_ text: String, _ target: Language, _ fallback: Language) -> String {
+        "\(target.code)|\(fallback.code)|\(text)"
     }
 
-    private func remember(_ translation: Translation, for text: String, source: String, target: String) {
+    private func remember(_ result: TranslationResult, for key: String) {
         if cache.count > 200 { cache.removeAll() }
-        cache["\(source)|\(target)|\(text)"] = translation
+        cache[key] = result
     }
 
     private func noteRecent(_ language: Language) {
-        guard !language.isAuto else { return }
+        guard language.isLanguage else { return }
         recents.removeAll { $0 == language }
         recents.insert(language, at: 0)
-        recents = Array(recents.prefix(5))
+        // One more than quick pick shows, since the current target is left out.
+        recents = Array(recents.prefix(Self.quickPickCount + 1))
         defaults.set(recents.map(\.code), forKey: Keys.recents)
     }
+}
+
+private struct TranslationResult {
+    let text: String
+    let detected: Language?
+    let language: Language
 }
