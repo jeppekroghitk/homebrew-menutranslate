@@ -49,7 +49,14 @@ it. `make reset` forgets it.
 
 ## Development
 
-Needs macOS 13+ and a Swift 5.9+ toolchain. The Command Line Tools are enough.
+Needs macOS 13+ and a Swift 5.9+ toolchain. The Command Line Tools are enough,
+with one catch: the macOS 27 SDK they ship turns SwiftUI's `@State` into a macro
+whose plugin only comes with Xcode, so the build fails with "plugin for module
+'SwiftUIMacros' not found". Point the build at an older SDK instead:
+
+```sh
+export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+```
 
 ```sh
 make              # list every target
@@ -64,12 +71,16 @@ rate limited per IP, hence the debounce and the response cache.
 
 ## Releasing
 
-Bump `VERSION`, then tag:
+`VERSION` has to be committed before the tag is created: the workflow builds
+from the tagged commit and fails if the tag and `VERSION` disagree.
 
 ```sh
-git tag v0.1.0 && git push --tags
+echo 0.3.0 > VERSION
+git commit -m "Bump version to 0.3.0" VERSION
+git tag v0.3.0
+git push origin main v0.3.0
 ```
 
 `.github/workflows/release.yml` builds the universal bundle, attaches the zip to a
-GitHub release, and commits the real `sha256` into the cask. It fails if the tag
-and `VERSION` disagree.
+GitHub release, and commits the real `sha256` into the cask, so `git pull`
+afterwards before changing the cask again.
